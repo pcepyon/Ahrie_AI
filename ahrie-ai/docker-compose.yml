@@ -1,0 +1,97 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: ahrie_ai_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ahrie_ai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ahrie_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ahrie_ai_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ahrie_network
+
+  # Ngrok for development (optional)
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ahrie_ai_ngrok
+    restart: unless-stopped
+    profiles:
+      - development
+    command:
+      - "http"
+      - "host.docker.internal:8000"
+      - "--authtoken=${NGROK_AUTHTOKEN}"
+      - "--domain=${NGROK_DOMAIN}"
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"  # Ngrok web interface
+    networks:
+      - ahrie_network
+
+  # Application (uncomment when ready to containerize)
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: ahrie_ai_app
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     DATABASE_URL: postgresql://postgres:${DB_PASSWORD:-password}@postgres:5432/ahrie_ai
+  #     REDIS_URL: redis://default:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./logs:/app/logs
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - ahrie_network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  ahrie_network:
+    driver: bridge

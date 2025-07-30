@@ -1,0 +1,68 @@
+{
+  "welcome_message": "Welcome to Ahrie AI, {name}! 🌟\n\nI'm your personal K-Beauty medical tourism assistant. I can help you with:\n\n• 🏥 Medical procedures information\n• 🏨 Finding the right clinic\n• 📹 Real patient reviews\n• 🕌 Halal and cultural guidance\n• 💰 Price estimates\n• 📅 Planning your trip\n\nHow can I assist you today?",
+  
+  "start_follow_up": "💡 Quick tip: You can type your questions in English, Arabic, or Korean. I'll understand and respond in your preferred language!\n\nWhat would you like to know about Korean beauty procedures?",
+  
+  "help_message": "📖 **How to Use Ahrie AI**\n\n**Commands:**\n/start - Start over\n/help - Show this help\n/language - Change language\n/procedures - Browse procedures\n/clinics - View top clinics\n/about - About Ahrie AI\n\n**You can ask me about:**\n• Specific procedures (e.g., \"Tell me about rhinoplasty\")\n• Clinic recommendations\n• Prices and packages\n• Recovery times\n• Patient reviews\n• Halal restaurants near clinics\n• Prayer facilities\n• Cultural advice\n\n**Tips:**\n• Be specific with your questions\n• I can show you real YouTube reviews\n• Ask about female doctors if preferred\n• I'll help you plan your entire trip!",
+  
+  "about_message": "🤖 **About Ahrie AI**\n\nAhrie AI is your trusted companion for K-Beauty medical tourism. We specialize in helping patients from Saudi Arabia and the UAE navigate their journey to Korea for cosmetic procedures.\n\n**Our Features:**\n• Multi-language support (EN/AR/KO)\n• Real patient review analysis\n• Halal-friendly recommendations\n• Cultural guidance\n• Verified clinic information\n• Price transparency\n\n**Why Choose Korea?**\n• World-leading techniques\n• Competitive prices\n• High safety standards\n• Natural-looking results\n\n**Contact:**\nFor support: support@ahrieai.com\nWhatsApp: +82-10-XXXX-XXXX",
+  
+  "choose_language": "Please select your preferred language:",
+  "language_updated": "✅ Language updated to English",
+  "unknown_command": "❓ I don't recognize that command. Type /help to see available commands.",
+  "error_message": "😔 Sorry, I encountered an error. Please try again or type /help for assistance.",
+  
+  "main_menu": "📱 Main Menu - How can I help you today?",
+  "procedures_menu": "🏥 **Popular Procedures**\n\nSelect a procedure to learn more:",
+  
+  "clinic_details": "🏨 **{clinic_name}**\n\n📍 Location: Gangnam, Seoul\n⭐ Rating: 4.8/5\n🌐 Languages: English, Arabic, Korean\n\n**Specialties:**\n• Facial contouring\n• Rhinoplasty\n• Eye surgery\n\n**Features:**\n✅ Halal meals available\n✅ Prayer room\n✅ Arabic translator\n✅ Female staff available\n\n📞 Contact: +82-2-XXX-XXXX",
+  
+  "medical_consultation": "Medical Consultation",
+  "review_analysis": "Review Analysis",
+  "cultural_etiquette": "Cultural Guide",
+  
+  "book_consultation": "Book Consultation",
+  "send_photos": "Send Photos",
+  "ask_question": "Ask Question",
+  "get_quote": "Get Quote",
+  
+  "watch_videos": "Watch Videos",
+  "see_statistics": "See Statistics",
+  "search_more_reviews": "Search More",
+  
+  "find_mosques": "Find Mosques",
+  "halal_restaurants": "Halal Restaurants",
+  "womens_guide": "Women's Guide",
+  "prayer_times": "Prayer Times",
+  
+  "price_estimates": "Price Estimates",
+  "recovery_times": "Recovery Times",
+  "top_clinics": "Top Clinics",
+  "locations": "Locations",
+  
+  "how_to_use": "How to Use",
+  "faqs": "FAQs",
+  "contact_support": "Contact Support",
+  "privacy_policy": "Privacy Policy",
+  "terms_of_service": "Terms of Service",
+  
+  "back": "Back",
+  "yes": "Yes",
+  "no": "No",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "submit": "Submit",
+  
+  "loading": "Loading...",
+  "please_wait": "Please wait while I process your request...",
+  "thank_you": "Thank you!",
+  
+  "share_contact": "Share Contact",
+  "share_location": "Share Location",
+  
+  "rating_prompt": "How would you rate this information?",
+  "feedback_thanks": "Thank you for your feedback!",
+  
+  "no_results": "No results found. Please try a different search.",
+  "connection_error": "Connection error. Please check your internet and try again."
+}
