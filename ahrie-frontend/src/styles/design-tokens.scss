@@ -1,0 +1,207 @@
+// Ahrie AI Design Tokens
+// Variables, Mixins, and Functions only - No global styles
+
+// Color Palette
+$colors: (
+  'background': #000000,
+  'background-alt': #0A0A0A,
+  'text-primary': #FFFFFF,
+  'text-secondary': #B8B8B8,
+  'accent-gold': #D4AF37,      // Korean luxury aesthetic
+  'accent-rose': #FFB6C1,      // K-Beauty pink
+  'accent-medical': #00D4AA,   // Medical trust
+  'gradient-start': #1A0033,   // Deep purple
+  'gradient-end': #330019      // Deep rose
+);
+
+// Typography System - Variable Font Scales
+$font-families: (
+  'display': ('Gmarket Sans', 'SF Arabic', 'Noto Sans KR', sans-serif),
+  'body': ('Inter', 'IBM Plex Sans Arabic', 'Pretendard', sans-serif),
+  'accent': ('Playfair Display', 'Amiri', 'Nanum Myeongjo', serif)
+);
+
+// Font Sizes (Fluid Typography)
+$font-sizes: (
+  'hero': clamp(3rem, 8vw, 7rem),
+  'display': clamp(2.5rem, 6vw, 5rem),
+  'heading-1': clamp(2rem, 4vw, 3.5rem),
+  'heading-2': clamp(1.5rem, 3vw, 2.5rem),
+  'heading-3': clamp(1.25rem, 2.5vw, 2rem),
+  'body-large': clamp(1.125rem, 2vw, 1.5rem),
+  'body': clamp(1rem, 1.5vw, 1.125rem),
+  'body-small': clamp(0.875rem, 1.2vw, 1rem),
+  'caption': clamp(0.75rem, 1vw, 0.875rem)
+);
+
+// Spacing System
+$spacing: (
+  'xs': 0.25rem,
+  'sm': 0.5rem,
+  'md': 1rem,
+  'lg': 1.5rem,
+  'xl': 2rem,
+  'xxl': 3rem,
+  'xxxl': 4rem,
+  'xxxxl': 6rem
+);
+
+// Breakpoints
+$breakpoints: (
+  'xs': 320px,
+  'sm': 640px,
+  'md': 768px,
+  'lg': 1024px,
+  'xl': 1280px,
+  'xxl': 1536px,
+  'xxxl': 1920px
+);
+
+// Animation Timings
+$timings: (
+  'instant': 100ms,
+  'fast': 200ms,
+  'normal': 300ms,
+  'slow': 500ms,
+  'slower': 800ms,
+  'slowest': 1200ms
+);
+
+// Easing Functions
+$easings: (
+  'linear': linear,
+  'ease-in': cubic-bezier(0.55, 0.055, 0.675, 0.19),
+  'ease-out': cubic-bezier(0.215, 0.61, 0.355, 1),
+  'ease-in-out': cubic-bezier(0.645, 0.045, 0.355, 1),
+  'smooth': cubic-bezier(0.25, 0.1, 0.25, 1),
+  'smooth-out': cubic-bezier(0, 0.55, 0.45, 1),
+  'elastic': cubic-bezier(0.68, -0.55, 0.265, 1.55)
+);
+
+// Z-Index Scale
+$z-index: (
+  'below': -1,
+  'base': 0,
+  'content': 10,
+  'sticky': 100,
+  'fixed': 1000,
+  'modal': 2000,
+  'popover': 3000,
+  'tooltip': 4000,
+  'notification': 5000
+);
+
+// Mixins
+@mixin fluid-type($min-size, $max-size, $min-vw: 320px, $max-vw: 1920px) {
+  $u1: unit($min-vw);
+  $u2: unit($max-vw);
+  $u3: unit($min-size);
+  $u4: unit($max-size);
+  
+  @if $u1 == $u2 and $u1 == $u3 and $u1 == $u4 {
+    font-size: $min-size;
+    
+    @media screen and (min-width: $min-vw) {
+      font-size: calc(#{$min-size} + #{strip-unit($max-size - $min-size)} * ((100vw - #{$min-vw}) / #{strip-unit($max-vw - $min-vw)}));
+    }
+    
+    @media screen and (min-width: $max-vw) {
+      font-size: $max-size;
+    }
+  }
+}
+
+@function strip-unit($number) {
+  @if type-of($number) == 'number' and not unitless($number) {
+    @return $number / ($number * 0 + 1);
+  }
+  @return $number;
+}
+
+@mixin glassmorphism($blur: 10px, $opacity: 0.1) {
+  background: rgba(255, 255, 255, $opacity);
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@mixin gradient-text($start-color, $end-color, $angle: 45deg) {
+  background: linear-gradient($angle, $start-color, $end-color);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
+}
+
+@mixin glow($color, $intensity: 1) {
+  $size1: calc(20px * #{$intensity});
+  $size2: calc(40px * #{$intensity});
+  $size3: calc(60px * #{$intensity});
+  box-shadow: 
+    0 0 $size1 rgba($color, 0.5),
+    0 0 $size2 rgba($color, 0.3),
+    0 0 $size3 rgba($color, 0.1);
+}
+
+// RTL Support
+@mixin rtl {
+  [dir="rtl"] & {
+    @content;
+  }
+}
+
+@mixin ltr {
+  [dir="ltr"] & {
+    @content;
+  }
+}
+
+// Responsive Mixins
+@mixin breakpoint($breakpoint) {
+  @if map-has-key($breakpoints, $breakpoint) {
+    @media (min-width: map-get($breakpoints, $breakpoint)) {
+      @content;
+    }
+  }
+}
+
+// Motion Preferences
+@mixin motion-safe {
+  @media (prefers-reduced-motion: no-preference) {
+    @content;
+  }
+}
+
+@mixin motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}
+
+// Dark Mode (always dark for Ahrie)
+@mixin dark-mode {
+  @media (prefers-color-scheme: dark) {
+    @content;
+  }
+}
+
+// Utility Functions
+@function color($color-name) {
+  @return map-get($colors, $color-name);
+}
+
+@function spacing($spacing-name) {
+  @return map-get($spacing, $spacing-name);
+}
+
+@function timing($timing-name) {
+  @return map-get($timings, $timing-name);
+}
+
+@function easing($easing-name) {
+  @return map-get($easings, $easing-name);
+}
+
+@function z($layer) {
+  @return map-get($z-index, $layer);
+}
