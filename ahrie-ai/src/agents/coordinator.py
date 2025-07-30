@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Any
 from agno.agent import Agent, RunResponse
-from agno.models.openai import OpenAIChat
+from agno.models.langdb import LangDB
 from agno.tools.duckduckgo import DuckDuckGoTools
 import logging
 from datetime import datetime
@@ -10,6 +10,13 @@ import os
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Initialize LangDB tracing
+try:
+    from pylangdb.agno import init
+    init()
+except ImportError:
+    logger.warning("pylangdb not installed, tracing will not be available")
 
 
 class CoordinatorAgent:
@@ -23,30 +30,25 @@ class CoordinatorAgent:
     def __init__(self, name: str = "Coordinator"):
         self.name = name
         
-        # Get OpenRouter API key from settings or environment
-        self.openrouter_api_key = getattr(settings, 'OPENROUTER_API_KEY', None) or os.getenv('OPENROUTER_API_KEY')
-        if not self.openrouter_api_key:
-            logger.error("OPENROUTER_API_KEY not found in settings or environment")
-            raise ValueError("OPENROUTER_API_KEY must be set in environment variables")
+        # Get API keys from settings
+        self.langdb_api_key = getattr(settings, 'LANGDB_API_KEY', None) or os.getenv('LANGDB_API_KEY')
+        self.langdb_project_id = getattr(settings, 'LANGDB_PROJECT_ID', None) or os.getenv('LANGDB_PROJECT_ID')
         
-        # OpenRouter 설정
-        self.openrouter_base_url = "https://openrouter.ai/api/v1"
-        self.model = "google/gemini-pro-1.5"
+        if not self.langdb_api_key or not self.langdb_project_id:
+            logger.error("LANGDB_API_KEY or LANGDB_PROJECT_ID not found")
+            raise ValueError("LANGDB_API_KEY and LANGDB_PROJECT_ID must be set")
         
-        # Store original environment variables to restore later
-        self._original_openai_key = os.environ.get("OPENAI_API_KEY")
-        self._original_openai_base = os.environ.get("OPENAI_API_BASE")
-        
-        # Temporarily set for OpenRouter compatibility
-        os.environ["OPENAI_API_KEY"] = self.openrouter_api_key
-        os.environ["OPENAI_API_BASE"] = self.openrouter_base_url
+        # LangDB configuration
+        # Note: OpenRouter models might not be fully supported yet in LangDB
+        # Using OpenAI model instead
+        self.model = "gpt-4o-mini"  # Using OpenAI model via LangDB
         
         self.agent = Agent(
             name=name,
-            model=OpenAIChat(
+            model=LangDB(
                 id=self.model,
-                api_key=self.openrouter_api_key,
-                base_url=self.openrouter_base_url
+                api_key=self.langdb_api_key,
+                project_id=self.langdb_project_id
             ),
             description="안녕하세요! 저는 한국 미용 의료 관광을 도와드리는 친근한 도우미예요. 여러분의 아름다운 변화 여정을 함께하게 되어 정말 기뻐요! 💝",
             instructions=[
@@ -63,18 +65,8 @@ class CoordinatorAgent:
         self.conversation_history: List[Dict[str, Any]] = []
     
     def __del__(self):
-        """Restore original environment variables when agent is destroyed."""
-        if hasattr(self, '_original_openai_key'):
-            if self._original_openai_key is not None:
-                os.environ["OPENAI_API_KEY"] = self._original_openai_key
-            else:
-                os.environ.pop("OPENAI_API_KEY", None)
-        
-        if hasattr(self, '_original_openai_base'):
-            if self._original_openai_base is not None:
-                os.environ["OPENAI_API_BASE"] = self._original_openai_base
-            else:
-                os.environ.pop("OPENAI_API_BASE", None)
+        """Cleanup when agent is destroyed."""
+        pass  # No environment variable restoration needed with LangDB
         
     async def analyze_intent(self, message: str) -> Dict[str, Any]:
         """

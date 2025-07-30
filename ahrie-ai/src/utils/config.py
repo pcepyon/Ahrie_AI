@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # OpenRouter
     OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="OpenRouter API key (optional, falls back to OPENAI_API_KEY)")
     
+    # LangDB
+    LANGDB_API_KEY: Optional[str] = Field(default=None, description="LangDB API key for monitoring")
+    LANGDB_PROJECT_ID: Optional[str] = Field(default=None, description="LangDB project ID")
+    
     # YouTube
     YOUTUBE_API_KEY: str = Field(..., description="YouTube Data API key")
     

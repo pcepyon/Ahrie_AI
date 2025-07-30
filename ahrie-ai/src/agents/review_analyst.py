@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Any, Tuple
 from agno.agent import Agent, RunResponse
-from agno.models.openai import OpenAIChat
+from agno.models.langdb import LangDB
 from agno.tools.duckduckgo import DuckDuckGoTools
 import logging
 from datetime import datetime
@@ -11,6 +11,13 @@ import os
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Initialize LangDB tracing
+try:
+    from pylangdb.agno import init
+    init()
+except ImportError:
+    logger.warning("pylangdb not installed, tracing will not be available")
 
 
 class ReviewAnalystAgent:
@@ -24,18 +31,24 @@ class ReviewAnalystAgent:
     def __init__(self, name: str = "ReviewAnalyst"):
         self.name = name
         
-        # Ensure OPENAI_API_KEY is set
-        api_key = settings.OPENAI_API_KEY
-        if not api_key:
-            logger.error("OPENAI_API_KEY not found in settings")
-            raise ValueError("OPENAI_API_KEY must be set in environment variables")
+        # Get API keys from settings
+        self.langdb_api_key = getattr(settings, 'LANGDB_API_KEY', None) or os.getenv('LANGDB_API_KEY')
+        self.langdb_project_id = getattr(settings, 'LANGDB_PROJECT_ID', None) or os.getenv('LANGDB_PROJECT_ID')
         
-        # Set the API key for OpenAI in environment
-        os.environ["OPENAI_API_KEY"] = api_key
+        if not self.langdb_api_key or not self.langdb_project_id:
+            logger.error("LANGDB_API_KEY or LANGDB_PROJECT_ID not found")
+            raise ValueError("LANGDB_API_KEY and LANGDB_PROJECT_ID must be set")
+        
+        # LangDB configuration
+        self.model = "gpt-4o-mini"  # Using direct OpenAI model via LangDB
         
         self.agent = Agent(
             name=name,
-            model=OpenAIChat(id="gpt-4o-mini"),
+            model=LangDB(
+                id=self.model,
+                api_key=self.langdb_api_key,
+                project_id=self.langdb_project_id
+            ),
             description="Review analyst specializing in K-Beauty medical tourism YouTube content.",
             instructions=[
                 "You are a review analyst specializing in K-Beauty medical tourism YouTube content.",
