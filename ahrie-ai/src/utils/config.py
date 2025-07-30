@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = Field(default="gpt-4-turbo-preview", description="OpenAI model to use")
     OPENAI_EMBEDDING_MODEL: str = Field(default="text-embedding-3-small", description="OpenAI embedding model")
     
+    # OpenRouter
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, description="OpenRouter API key (optional, falls back to OPENAI_API_KEY)")
+    
     # YouTube
     YOUTUBE_API_KEY: str = Field(..., description="YouTube Data API key")
     

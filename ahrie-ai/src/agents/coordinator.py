@@ -23,30 +23,58 @@ class CoordinatorAgent:
     def __init__(self, name: str = "Coordinator"):
         self.name = name
         
-        # Ensure OPENAI_API_KEY is set
-        api_key = settings.OPENAI_API_KEY
-        if not api_key:
-            logger.error("OPENAI_API_KEY not found in settings")
-            raise ValueError("OPENAI_API_KEY must be set in environment variables")
+        # Get OpenRouter API key from settings or environment
+        self.openrouter_api_key = getattr(settings, 'OPENROUTER_API_KEY', None) or os.getenv('OPENROUTER_API_KEY')
+        if not self.openrouter_api_key:
+            logger.error("OPENROUTER_API_KEY not found in settings or environment")
+            raise ValueError("OPENROUTER_API_KEY must be set in environment variables")
         
-        # Set the API key for OpenAI in environment
-        os.environ["OPENAI_API_KEY"] = api_key
+        # OpenRouter 설정
+        self.openrouter_base_url = "https://openrouter.ai/api/v1"
+        self.model = "google/gemini-pro-1.5"
+        
+        # Store original environment variables to restore later
+        self._original_openai_key = os.environ.get("OPENAI_API_KEY")
+        self._original_openai_base = os.environ.get("OPENAI_API_BASE")
+        
+        # Temporarily set for OpenRouter compatibility
+        os.environ["OPENAI_API_KEY"] = self.openrouter_api_key
+        os.environ["OPENAI_API_BASE"] = self.openrouter_base_url
         
         self.agent = Agent(
             name=name,
-            model=OpenAIChat(id="gpt-4o-mini"),
-            description="You are the main coordinator for K-Beauty medical tourism assistance. Analyze user queries and route them appropriately.",
+            model=OpenAIChat(
+                id=self.model,
+                api_key=self.openrouter_api_key,
+                base_url=self.openrouter_base_url
+            ),
+            description="안녕하세요! 저는 한국 미용 의료 관광을 도와드리는 친근한 도우미예요. 여러분의 아름다운 변화 여정을 함께하게 되어 정말 기뻐요! 💝",
             instructions=[
-                "You are the main coordinator for K-Beauty medical tourism assistance.",
-                "Analyze user queries and determine which specialized agent to consult.",
-                "Route medical questions to medical expert, reviews to review analyst, and cultural questions to cultural advisor.",
-                "Provide helpful, accurate information for Middle Eastern clients seeking K-Beauty treatments in Korea."
+                "안녕하세요! 저는 한국 미용 의료 관광 전문 도우미 Ahrie예요. 여러분의 이야기를 듣고 도와드리게 되어 정말 기뻐요! 😊",
+                "사용자의 감정과 기대감을 이해하고 공감하며, 따뜻하고 친근한 톤으로 대화해주세요.",
+                "의료 질문은 의료 전문가에게, 리뷰 관련은 리뷰 분석가에게, 문화적 질문은 문화 조언가에게 연결해드려요.",
+                "중동 지역 고객님들이 한국에서 안전하고 만족스러운 K-뷰티 시술을 받으실 수 있도록 세심하게 도와드려요.",
+                "항상 긍정적이고 격려하는 태도로 대화하며, 고객님의 걱정이나 불안감을 잘 들어주고 안심시켜드려요."
             ],
             tools=[DuckDuckGoTools()],
             markdown=True,
             show_tool_calls=True
         )
         self.conversation_history: List[Dict[str, Any]] = []
+    
+    def __del__(self):
+        """Restore original environment variables when agent is destroyed."""
+        if hasattr(self, '_original_openai_key'):
+            if self._original_openai_key is not None:
+                os.environ["OPENAI_API_KEY"] = self._original_openai_key
+            else:
+                os.environ.pop("OPENAI_API_KEY", None)
+        
+        if hasattr(self, '_original_openai_base'):
+            if self._original_openai_base is not None:
+                os.environ["OPENAI_API_BASE"] = self._original_openai_base
+            else:
+                os.environ.pop("OPENAI_API_BASE", None)
         
     async def analyze_intent(self, message: str) -> Dict[str, Any]:
         """
@@ -177,7 +205,7 @@ class CoordinatorAgent:
         except Exception as e:
             logger.error(f"Error in coordinator agent: {str(e)}")
             return {
-                "content": "I apologize, but I encountered an error processing your request. Please try again.",
+                "content": "앗, 죄송해요! 😔 잠시 문제가 생겼어요. 조금만 기다려주시면 다시 도와드릴게요. 여러분의 소중한 질문을 놓치고 싶지 않아요!",
                 "metadata": {"error": str(e)}
             }
     
@@ -216,13 +244,24 @@ class CoordinatorAgent:
             Formatted response string
         """
         if not result or not isinstance(result, dict):
-            return "I'm sorry, I couldn't process your request. Please try again."
+            return "어머, 죄송해요! 😢 제가 잠시 헷갈렸나봐요. 다시 한 번 말씀해주시면 더 잘 도와드릴게요!"
         
         # Check if there's any data in the response
         data = result.get("data", {})
         if not data:
             # If no specific agent was triggered, use the general Agno agent response
-            return "I understand you're looking for information about K-Beauty medical tourism. How can I help you today? You can ask me about:\n\n• Medical procedures (rhinoplasty, facial contouring, etc.)\n• Clinic recommendations\n• Halal restaurants and prayer facilities\n• Patient reviews and experiences\n\nPlease feel free to ask your question!"
+            return """안녕하세요! K-뷰티 의료 관광에 관심을 가져주셔서 정말 감사해요! 💕
+
+여러분의 아름다운 변화를 위한 여정을 도와드릴 수 있어서 기뻐요. 어떤 것이든 편하게 물어보세요!
+
+제가 도와드릴 수 있는 것들이에요:
+• 🏥 의료 시술 정보 (코성형, 안면윤곽, 가슴성형 등)
+• 👩‍⚕️ 믿을 수 있는 클리닉과 의사 추천
+• 🕌 할랄 레스토랑과 기도실 정보
+• ⭐ 실제 환자분들의 리뷰와 경험담
+• 💰 가격 정보와 여행 팁
+
+어떤 것부터 도와드릴까요? 여러분의 이야기를 들려주세요! 😊"""
         
         # Format responses from different agents
         responses = []
@@ -236,16 +275,16 @@ class CoordinatorAgent:
         if "cultural" in data:
             responses.append("🕌 **Cultural Guidance:**\n" + self._format_cultural_data(data["cultural"]))
         
-        return "\n\n".join(responses) if responses else "How can I assist you with your K-Beauty medical tourism journey?"
+        return "\n\n".join(responses) if responses else "여러분의 K-뷰티 여정을 어떻게 도와드릴까요? 무엇이든 편하게 물어보세요! 💖"
     
     def _format_medical_data(self, data: Dict[str, Any]) -> str:
         """Format medical expert response."""
-        return str(data.get("content", "Medical information will be provided here."))
+        return str(data.get("content", "의료 정보를 준비하고 있어요! 곧 자세한 내용을 알려드릴게요. 😊"))
     
     def _format_review_data(self, data: Dict[str, Any]) -> str:
         """Format review analyst response."""
-        return str(data.get("content", "Review analysis will be shown here."))
+        return str(data.get("content", "다른 분들의 경험담을 찾아보고 있어요! 실제 후기들을 곧 보여드릴게요. ⭐"))
     
     def _format_cultural_data(self, data: Dict[str, Any]) -> str:
         """Format cultural advisor response."""
-        return str(data.get("content", "Cultural guidance will be provided here."))
+        return str(data.get("content", "문화적인 정보를 준비하고 있어요! 편안한 한국 여행이 되도록 도와드릴게요. 🕌"))
