@@ -80,7 +80,7 @@ async def telegram_webhook(
         background_tasks.add_task(
             process_telegram_message,
             message_data,
-            request.app.state.agents
+            request.app.state.team_orchestrator
         )
         
         # Return immediate response to Telegram
@@ -141,18 +141,18 @@ def extract_message_data(update: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 async def process_telegram_message(
     message_data: Dict[str, Any],
-    agents: Dict[str, Any]
+    orchestrator: Any
 ) -> None:
     """
-    Process Telegram message using the bot handler and agents.
+    Process Telegram message using the bot handler and team orchestrator.
     
     Args:
         message_data: Extracted message data
-        agents: Dictionary of initialized agents
+        orchestrator: Team orchestrator instance
     """
     try:
-        # Initialize message handler
-        handler = TelegramMessageHandler(agents)
+        # Initialize message handler with team orchestrator
+        handler = TelegramMessageHandler(orchestrator)
         
         # Process the message
         await handler.handle_message(message_data)

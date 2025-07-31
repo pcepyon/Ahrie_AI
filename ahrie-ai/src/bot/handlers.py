@@ -21,15 +21,15 @@ class TelegramMessageHandler:
     Main handler for processing Telegram messages and interactions.
     """
     
-    def __init__(self, agents: Dict[str, Any]):
+    def __init__(self, orchestrator: Any):
         """
         Initialize the message handler.
         
         Args:
-            agents: Dictionary of initialized agents
+            orchestrator: Team orchestrator instance
         """
         self.bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
-        self.agents = agents
+        self.orchestrator = orchestrator
         self.translator = TranslationManager()
         self.keyboard_builder = KeyboardBuilder()
         
@@ -80,9 +80,14 @@ class TelegramMessageHandler:
         # Store user message
         await self._store_message(conversation.id, text, "user", message_data)
         
-        # Process with orchestrator agent
-        # Get response from orchestrator (which will coordinate all agents)
-        response = await self.agents["orchestrator"].process(text)
+        # Process with team orchestrator
+        # Get response from team orchestrator (which coordinates all agents)
+        response = await self.orchestrator.process(
+            message=text,
+            user_id=str(user_id),
+            session_id=f"telegram_{chat_id}",
+            language_code=language_code
+        )
         
         # Format and send response
         formatted_response = await self._format_agent_response(response, language_code)
@@ -396,9 +401,15 @@ class TelegramMessageHandler:
         Returns:
             Formatted text for Telegram
         """
-        # This would implement proper formatting based on response structure
-        # For now, return the content as is
-        return str(response.get("content", ""))
+        content = str(response.get("content", ""))
+        
+        # Escape special Markdown characters to prevent parsing errors
+        # Order matters: backslash must be escaped first
+        special_chars = ['\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|']
+        for char in special_chars:
+            content = content.replace(char, f'\\{char}')
+        
+        return content
     
     def _format_procedure_info(self, info: Dict[str, Any], 
                              language_code: str) -> str:

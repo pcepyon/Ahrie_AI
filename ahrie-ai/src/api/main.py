@@ -26,36 +26,17 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     
-    # Initialize agents
-    from src.agents import (
-        CoordinatorAgent,
-        MedicalExpertAgent,
-        ReviewAnalystAgent,
-        CulturalAdvisorAgent,
-        OrchestratorAgent
-    )
+    # Initialize Enhanced Team-based orchestrator V2
+    from src.agents.team_orchestrator_v2 import AhrieTeamOrchestratorV2
     
-    # Initialize specialized agents first
-    coordinator = CoordinatorAgent()
-    medical_expert = MedicalExpertAgent()
-    review_analyst = ReviewAnalystAgent()
-    cultural_advisor = CulturalAdvisorAgent()
+    # Initialize the enhanced team orchestrator
+    team_orchestrator = AhrieTeamOrchestratorV2()
     
-    # Create agents dictionary
-    agents_dict = {
-        "coordinator": coordinator,
-        "medical_expert": medical_expert,
-        "review_analyst": review_analyst,
-        "cultural_advisor": cultural_advisor
-    }
+    # Store in app state
+    app.state.team_orchestrator = team_orchestrator
     
-    # Initialize orchestrator with access to all agents
-    orchestrator = OrchestratorAgent(agents_dict)
-    
-    # Add orchestrator to agents dictionary
-    agents_dict["orchestrator"] = orchestrator
-    
-    app.state.agents = agents_dict
+    # For backward compatibility, also store as orchestrator
+    app.state.orchestrator = team_orchestrator
     
     logger.info("All systems initialized successfully")
     
