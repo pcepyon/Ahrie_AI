@@ -3,21 +3,34 @@
 ## Project Overview
 Ahrie AI는 사우디아라비아와 UAE 고객을 위한 한국 미용 의료 관광 챗봇입니다. Telegram을 인터페이스로 사용하며, Agno 프레임워크 기반의 멀티 에이전트 시스템으로 구축되었습니다.
 
+## 🚀 Quick Start
+```bash
+# API 연결 테스트
+python ahrie-ai/test_llm_connection.py
+
+# 오케스트레이터 테스트
+python ahrie-ai/test_team_orchestrator_v2.py
+
+# 메인 애플리케이션 실행
+python ahrie-ai/src/main.py
+```
+
 ## Architecture
 
 ### 1. Multi-Agent System (Agno Framework)
-- **Coordinator Agent**: 사용자 대화를 조정하고 적절한 전문 에이전트로 라우팅
-- **Medical Expert Agent**: 의료 시술 정보, 클리닉 추천, 의료 상담 제공
-- **Review Analyst Agent**: YouTube 리뷰 분석 및 환자 경험 인사이트 제공
-- **Cultural Advisor Agent**: 할랄 가이드, 기도 시설, 문화적 조언 제공
+- **Team Orchestrator V2**: Agno 프레임워크 기반의 향상된 팀 오케스트레이터
+  - LangDB 통합으로 모니터링 및 관찰 가능성 제공
+  - 자동 에이전트 선택 및 조정
+  - 세션 상태 관리 및 인사이트 제공
 
 ### 2. Technology Stack
 - **Backend**: FastAPI, Uvicorn
 - **Bot Interface**: python-telegram-bot (v20+)
 - **Database**: PostgreSQL (asyncpg)
 - **Vector Store**: LanceDB
-- **AI/ML**: OpenAI API
+- **AI/ML**: OpenAI API via LangDB (Agno Framework)
 - **Web Scraping**: YouTube Data API, BeautifulSoup4
+- **Monitoring**: LangDB (실시간 API 추적 및 모니터링)
 
 ### 3. Key Features
 - 🌐 다국어 지원 (Arabic, English, Korean)
@@ -26,6 +39,8 @@ Ahrie AI는 사우디아라비아와 UAE 고객을 위한 한국 미용 의료 �
 - 👩‍⚕️ 여성 의료진 정보 제공
 - 💰 실시간 가격 비교
 - 📍 위치 기반 서비스
+- 📊 LangDB를 통한 실시간 API 모니터링
+- 🤖 Agno Framework 기반 지능형 에이전트 시스템
 
 ## Development Setup
 
@@ -37,9 +52,10 @@ Ahrie AI는 사우디아라비아와 UAE 고객을 위한 한국 미용 의료 �
 
 ### Required API Keys
 - Telegram Bot Token
-- OpenAI API Key
+- OpenAI API Key (또는 LangDB API Key)
 - YouTube Data API Key
 - Ngrok Auth Token
+- LangDB API Key & Project ID (선택사항, 모니터링용)
 
 ### Installation Steps
 ```bash
@@ -73,7 +89,7 @@ curl -X POST http://localhost:8000/api/v1/webhook/set
 ### 1. Import Errors
 - **SQLAlchemy metadata reserved word**: Changed `metadata` field to `message_metadata` in Message model
 - **Telegram ParseMode import**: Updated to `from telegram.constants import ParseMode` for v20+
-- **Agno framework imports**: Currently commented out pending actual package structure verification
+- **Agno framework imports**: Successfully integrated with team_orchestrator_v2.py
 
 ### 2. Module Import Path Issues
 - Added `sys.path.append` to main.py to handle module imports
@@ -84,20 +100,27 @@ curl -X POST http://localhost:8000/api/v1/webhook/set
 
 ## Project Structure
 ```
-ahrie-ai/
-├── src/
-│   ├── agents/          # Agno agents (Coordinator, Medical, Review, Cultural)
-│   ├── api/             # FastAPI application and routes
-│   ├── bot/             # Telegram bot handlers and keyboards
-│   ├── database/        # SQLAlchemy models and connection
-│   ├── scrapers/        # YouTube and medical info scrapers
-│   ├── knowledge/       # LanceDB vector store
-│   ├── translations/    # i18n support (AR/EN/KO)
-│   └── utils/           # Config and logging
-├── tests/               # Test suite
-├── scripts/             # Setup and utility scripts
-├── data/                # Data storage
-└── logs/                # Application logs
+Ahrie_AI/
+├── ahrie-ai/
+│   ├── src/
+│   │   ├── agents/          # Agno agents (Team Orchestrator V2)
+│   │   │   ├── team_orchestrator_v2.py  # 메인 오케스트레이터
+│   │   │   └── CLAUDE.md    # Agent API 설정 가이드
+│   │   ├── api/             # FastAPI application and routes
+│   │   ├── bot/             # Telegram bot handlers and keyboards
+│   │   ├── database/        # SQLAlchemy models and connection
+│   │   ├── scrapers/        # YouTube and medical info scrapers
+│   │   ├── knowledge/       # LanceDB vector store
+│   │   ├── translations/    # i18n support (AR/EN/KO)
+│   │   └── utils/           # Config and logging
+│   ├── test_llm_connection.py    # LangDB/OpenRouter 연결 테스트
+│   ├── test_team_orchestrator_v2.py  # 오케스트레이터 테스트
+│   ├── scripts/             # Setup and utility scripts
+│   ├── data/                # Data storage
+│   ├── logs/                # Application logs
+│   └── tests/               # Empty test directory (to be populated)
+├── frontend/                # Next.js frontend application
+└── CLAUDE.md               # This file
 ```
 
 ## API Endpoints
@@ -118,11 +141,15 @@ ahrie-ai/
 
 ## Development Commands
 ```bash
+# Navigate to project directory
+cd ahrie-ai/
+
 # Install dependencies
 pip install -r requirements-dev.txt
 
 # Run tests
-pytest
+python test_llm_connection.py    # LangDB 연결 테스트
+python test_team_orchestrator_v2.py  # 오케스트레이터 테스트
 
 # Format code
 black src/
@@ -135,6 +162,9 @@ docker-compose up -d postgres
 
 # View logs
 tail -f logs/app.log
+
+# Run main application
+python src/main.py
 ```
 
 ## Deployment Notes
@@ -145,20 +175,32 @@ tail -f logs/app.log
 - Use proper webhook URL instead of ngrok
 
 ## TODO
-1. Verify and implement actual Agno framework imports
+1. ~~Verify and implement actual Agno framework imports~~ ✅ Completed with team_orchestrator_v2.py
 2. Add comprehensive test coverage
 3. Implement actual YouTube scraping logic
 4. Set up CI/CD pipeline
-5. Add monitoring and alerting
+5. ~~Add monitoring and alerting~~ ✅ Partially completed with LangDB integration
 6. Implement rate limiting and caching
 7. Add admin dashboard
 8. Enhance NLP capabilities
+9. Complete tests/ directory structure with proper test files
+10. Integrate frontend with backend API
+11. Implement Telegram bot webhook handlers
+12. Add user authentication and session management
 
 ## Troubleshooting
 - If module import fails: Check PYTHONPATH or use `python -m`
 - If database connection fails: Verify PostgreSQL is running
 - If webhook fails: Check ngrok is running and URL is correct
 - If translations missing: Verify locale JSON files exist
+- If LangDB connection fails: Check LANGDB_API_KEY and LANGDB_PROJECT_ID in .env
+- If OpenRouter models fail: Use OpenAI models (gpt-4o-mini) as fallback
+
+## Recent Updates
+- ✅ Cleaned up test files - removed outdated tests that don't match current architecture
+- ✅ Integrated Team Orchestrator V2 with Agno framework
+- ✅ Added LangDB monitoring for API tracking
+- ✅ Updated documentation to reflect current project state
 
 ## Contact
 For questions or issues, please create a GitHub issue or contact the development team.
