@@ -3,6 +3,8 @@
 from typing import List, Dict, Any, Optional
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import logging
 from datetime import datetime
 import re
@@ -407,3 +409,177 @@ class YouTubeScraper:
         appropriate_length = 300 <= duration <= 3600  # 5 minutes to 1 hour
         
         return has_relevant and not has_exclude and appropriate_length
+    
+    async def get_video_transcript(self, video_id: str, languages: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Get transcript/captions for a YouTube video.
+        
+        Args:
+            video_id: YouTube video ID
+            languages: List of language codes to try (e.g., ['ar', 'en', 'ko'])
+            
+        Returns:
+            Dictionary containing transcript text and metadata
+        """
+        if languages is None:
+            languages = ['ar', 'en', 'ko']
+        
+        try:
+            # Run in executor to make it async
+            loop = asyncio.get_event_loop()
+            
+            # Create API instance
+            api = YouTubeTranscriptApi()
+            
+            # Try to fetch transcript directly (will get default available language)
+            transcript_data = await loop.run_in_executor(
+                None,
+                api.fetch,
+                video_id
+            )
+            
+            if transcript_data:
+                # Combine all text segments
+                full_text = ' '.join([segment.text for segment in transcript_data])
+                
+                # Clean up the text
+                full_text = re.sub(r'\s+', ' ', full_text)  # Remove extra whitespace
+                full_text = full_text.strip()
+                
+                # Detect language from content
+                detected_language = self._detect_language(full_text[:500])
+                
+                # Convert segments to dict format
+                segments_dict = [
+                    {
+                        'text': seg.text,
+                        'start': seg.start,
+                        'duration': seg.duration
+                    } for seg in transcript_data
+                ]
+                
+                return {
+                    'video_id': video_id,
+                    'transcript': full_text,
+                    'language': detected_language,
+                    'is_generated': True,  # We can't determine this with the new API
+                    'segments': segments_dict,
+                    'success': True
+                }
+            else:
+                return {
+                    'video_id': video_id,
+                    'transcript': '',
+                    'error': 'No transcript available',
+                    'success': False
+                }
+                
+        except TranscriptsDisabled:
+            logger.warning(f"Transcripts are disabled for video {video_id}")
+            return {
+                'video_id': video_id,
+                'transcript': '',
+                'error': 'Transcripts disabled for this video',
+                'success': False
+            }
+        except NoTranscriptFound:
+            logger.warning(f"No transcript found for video {video_id}")
+            return {
+                'video_id': video_id,
+                'transcript': '',
+                'error': 'No transcript found',
+                'success': False
+            }
+        except Exception as e:
+            logger.error(f"Error getting transcript for video {video_id}: {str(e)}")
+            return {
+                'video_id': video_id,
+                'transcript': '',
+                'error': str(e),
+                'success': False
+            }
+    
+    async def search_and_analyze_reviews(self, 
+                                       procedure: str,
+                                       language: str = 'en',
+                                       max_videos: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search for procedure reviews and analyze their transcripts.
+        
+        Args:
+            procedure: Medical procedure to search for
+            language: Target language for search and transcripts
+            max_videos: Maximum number of videos to analyze
+            
+        Returns:
+            List of analyzed video reviews with transcripts
+        """
+        # Search for relevant videos
+        videos = await self.search_korean_beauty_reviews(
+            procedure=procedure,
+            language=language
+        )
+        
+        # Limit to max_videos
+        videos = videos[:max_videos]
+        
+        # Get transcripts for each video
+        analyzed_videos = []
+        for video in videos:
+            # Get transcript
+            transcript_data = await self.get_video_transcript(
+                video['video_id'],
+                languages=[language, 'en', 'ko', 'ar']
+            )
+            
+            # Combine video info with transcript
+            video['transcript_data'] = transcript_data
+            
+            if transcript_data['success']:
+                # Extract key insights from transcript
+                video['insights'] = self._extract_insights_from_transcript(
+                    transcript_data['transcript'],
+                    procedure
+                )
+            else:
+                video['insights'] = {
+                    'has_transcript': False,
+                    'error': transcript_data.get('error', 'Unknown error')
+                }
+            
+            analyzed_videos.append(video)
+        
+        return analyzed_videos
+    
+    def _extract_insights_from_transcript(self, transcript: str, procedure: str) -> Dict[str, Any]:
+        """
+        Extract key insights from transcript text.
+        
+        Args:
+            transcript: Full transcript text
+            procedure: Procedure being discussed
+            
+        Returns:
+            Dictionary of extracted insights
+        """
+        # Convert to lowercase for analysis
+        text_lower = transcript.lower()
+        
+        # Define keywords for different aspects
+        pain_keywords = ['pain', 'hurt', 'uncomfortable', 'ache', '아프', '통증', 'ألم', 'وجع']
+        recovery_keywords = ['recovery', 'heal', 'swelling', 'bruise', '회복', '붓기', 'شفاء', 'تورم']
+        satisfaction_keywords = ['happy', 'satisfied', 'recommend', 'worth', '만족', '추천', 'سعيد', 'راضي']
+        cost_keywords = ['price', 'cost', 'expensive', 'affordable', '가격', '비용', 'سعر', 'تكلفة']
+        
+        insights = {
+            'has_transcript': True,
+            'transcript_length': len(transcript.split()),
+            'mentions_pain': any(keyword in text_lower for keyword in pain_keywords),
+            'mentions_recovery': any(keyword in text_lower for keyword in recovery_keywords),
+            'mentions_satisfaction': any(keyword in text_lower for keyword in satisfaction_keywords),
+            'mentions_cost': any(keyword in text_lower for keyword in cost_keywords),
+            'procedure_mentioned': procedure.lower() in text_lower,
+            'snippet': transcript[:500] + '...' if len(transcript) > 500 else transcript
+        }
+        
+        return insights

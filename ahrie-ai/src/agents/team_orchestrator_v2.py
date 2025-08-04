@@ -129,16 +129,22 @@ class AhrieTeamOrchestratorV2:
             },
             "review": {
                 "en": [
-                    "You analyze patient reviews and experiences",
+                    "You analyze patient reviews and experiences from YouTube videos",
                     "Focus on YouTube reviews from Middle Eastern patients",
+                    "Extract insights from video transcripts about procedures",
+                    "Analyze mentions of pain, recovery time, satisfaction, and costs",
                     "Provide balanced analysis of clinics and procedures",
-                    "Identify trends in satisfaction and concerns"
+                    "Identify trends in patient experiences and concerns",
+                    "Summarize key findings from multiple video reviews"
                 ],
                 "ar": [
-                    "أنت محلل لتقييمات وتجارب المرضى",
+                    "أنت محلل لتقييمات وتجارب المرضى من فيديوهات YouTube",
                     "ركز على مراجعات YouTube من مرضى الشرق الأوسط",
+                    "استخرج الرؤى من نصوص الفيديو حول الإجراءات",
+                    "حلل ذكر الألم ووقت التعافي والرضا والتكاليف",
                     "قدم تحليلاً متوازنًا للعيادات والإجراءات",
-                    "حدد الاتجاهات في الرضا والمخاوف"
+                    "حدد الاتجاهات في تجارب المرضى ومخاوفهم",
+                    "لخص النتائج الرئيسية من مراجعات الفيديو المتعددة"
                 ]
             }
         }
@@ -354,29 +360,71 @@ class AhrieTeamOrchestratorV2:
             language: Language code for reviews (default: ar)
         """
         try:
-            # For now, return mock data as YouTube scraper is async
-            # In production, this would be handled differently
-            reviews = [
-                {
-                    "title": f"My {procedure} Experience in Korea",
-                    "channel": "Beauty Journey",
-                    "views": "150K",
-                    "rating": "95% positive",
-                    "id": "abc123"
+            # Run async function in sync context
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Search and analyze reviews with transcripts
+            analyzed_videos = loop.run_until_complete(
+                self.youtube_scraper.search_and_analyze_reviews(
+                    procedure=procedure,
+                    language=language,
+                    max_videos=5
+                )
+            )
+            
+            # Process results for agent response
+            reviews_summary = []
+            for video in analyzed_videos:
+                review_info = {
+                    "title": video.get("title", "Unknown"),
+                    "channel": video.get("channel_title", "Unknown"),
+                    "views": video.get("view_count", 0),
+                    "video_id": video.get("video_id"),
+                    "url": f"https://youtube.com/watch?v={video.get('video_id')}",
+                    "has_transcript": video.get("insights", {}).get("has_transcript", False)
                 }
-            ]
+                
+                # Add insights if transcript available
+                if video.get("insights", {}).get("has_transcript"):
+                    insights = video["insights"]
+                    review_info["analysis"] = {
+                        "mentions_pain": insights.get("mentions_pain", False),
+                        "mentions_recovery": insights.get("mentions_recovery", False),
+                        "mentions_satisfaction": insights.get("mentions_satisfaction", False),
+                        "mentions_cost": insights.get("mentions_cost", False),
+                        "transcript_snippet": insights.get("snippet", "")
+                    }
+                
+                reviews_summary.append(review_info)
             
             # Store in team state
             self.team_state["analyzed_reviews"].extend([
-                {"procedure": procedure, "video_id": r.get("id")} 
-                for r in reviews
+                {
+                    "procedure": procedure, 
+                    "video_id": r["video_id"],
+                    "has_analysis": r.get("has_transcript", False)
+                } 
+                for r in reviews_summary
             ])
             
-            return json.dumps(reviews, indent=2)
+            # Create summary response
+            if reviews_summary:
+                total_transcripts = sum(1 for r in reviews_summary if r.get("has_transcript"))
+                response = {
+                    "procedure": procedure,
+                    "videos_found": len(reviews_summary),
+                    "transcripts_analyzed": total_transcripts,
+                    "reviews": reviews_summary
+                }
+                return json.dumps(response, indent=2)
+            else:
+                return f"No YouTube reviews found for {procedure}"
             
         except Exception as e:
             logger.error(f"Error searching YouTube: {e}")
-            return "Error searching YouTube reviews"
+            return f"Error searching YouTube reviews: {str(e)}"
     
     # State Management Tools
     def _update_user_profile(self, key: str, value: Any) -> str:
