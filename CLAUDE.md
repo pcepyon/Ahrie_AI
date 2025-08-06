@@ -39,7 +39,7 @@ python ahrie-ai/src/main.py
 - 👩‍⚕️ 여성 의료진 정보 제공
 - 💰 실시간 가격 비교
 - 📍 위치 기반 서비스
-- 📊 LangDB를 통한 실시간 API 모니터링
+- 📊 LangDB를 통한 실시간 API 모니터링 및 Agno 에이전트 추적
 - 🤖 Agno Framework 기반 지능형 에이전트 시스템
 
 ## Development Setup
@@ -67,20 +67,23 @@ cd ahrie-ai
 chmod +x scripts/setup_dev.sh
 ./scripts/setup_dev.sh
 
-# 3. Configure environment
+# 3. Install LangDB for Agno monitoring (optional but recommended)
+pip install 'pylangdb[agno]'
+
+# 4. Configure environment
 cp .env.example .env
 # Edit .env with your API keys
 
-# 4. Start services
+# 5. Start services
 docker-compose up -d postgres redis
 
-# 5. Run application
+# 6. Run application
 python src/main.py
 
-# 6. Start ngrok (in another terminal)
+# 7. Start ngrok (in another terminal)
 ./scripts/run_ngrok.sh
 
-# 7. Set webhook
+# 8. Set webhook
 curl -X POST http://localhost:8000/api/v1/webhook/set
 ```
 
@@ -146,10 +149,12 @@ cd ahrie-ai/
 
 # Install dependencies
 pip install -r requirements-dev.txt
+pip install -r requirements-langdb.txt  # LangDB monitoring
 
 # Run tests
 python test_llm_connection.py    # LangDB 연결 테스트
 python test_team_orchestrator_v2.py  # 오케스트레이터 테스트
+python test_langdb_agno.py    # LangDB + Agno 통합 테스트
 
 # Format code
 black src/
@@ -196,11 +201,53 @@ python src/main.py
 - If LangDB connection fails: Check LANGDB_API_KEY and LANGDB_PROJECT_ID in .env
 - If OpenRouter models fail: Use OpenAI models (gpt-4o-mini) as fallback
 
+## LangDB + Agno Monitoring
+
+### Setup
+1. Install LangDB with Agno support:
+   ```bash
+   pip install 'pylangdb[agno]'
+   ```
+
+2. Set environment variables:
+   ```bash
+   export LANGDB_API_KEY="your_api_key"
+   export LANGDB_PROJECT_ID="your_project_id"
+   
+   # Fallback options
+   export OPENROUTER_API_KEY="your_openrouter_key"  # Alternative to LangDB
+   export OPENAI_API_KEY="your_openai_key"  # Direct OpenAI access
+   ```
+
+3. Run tests to verify:
+   ```bash
+   python test_langdb_simple.py    # Basic connectivity test
+   python test_langdb_debug.py     # Detailed debugging
+   python test_langdb_agno.py      # Full integration test
+   ```
+
+### Features
+- Automatic tracing of all Agno agent interactions
+- LLM call monitoring with request/response details
+- Tool usage tracking
+- Team coordination visualization
+- Performance metrics and cost tracking
+- Dashboard: `https://app.langdb.ai/projects/{your_project_id}`
+
+### Troubleshooting
+If you encounter "Json deserialize error: missing field `type`":
+1. The orchestrator will automatically try fallback options:
+   - OpenRouter (if OPENROUTER_API_KEY is set)
+   - Direct OpenAI API (if OPENAI_API_KEY is set)
+2. Check logs for detailed error messages
+3. Ensure your LangDB API key and project ID are valid
+
 ## Recent Updates
 - ✅ Cleaned up test files - removed outdated tests that don't match current architecture
 - ✅ Integrated Team Orchestrator V2 with Agno framework
 - ✅ Added LangDB monitoring for API tracking
 - ✅ Updated documentation to reflect current project state
+- ✅ Enhanced LangDB integration for full Agno agent tracing
 
 ## Contact
 For questions or issues, please create a GitHub issue or contact the development team.

@@ -1,0 +1,11 @@
+# LangDB integration requirements for Agno framework monitoring
+# Install with: pip install -r requirements-langdb.txt
+
+# Core LangDB package with Agno support
+pylangdb[agno]>=0.1.0
+
+# Agno framework (if not already installed)
+agno>=1.0.0
+
+# Additional dependencies for monitoring
+python-dotenv>=1.0.0  # For environment variable management

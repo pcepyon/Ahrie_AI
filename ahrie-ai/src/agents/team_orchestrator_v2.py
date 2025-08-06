@@ -1,32 +1,51 @@
-"""Enhanced Team-based Orchestrator with proper agent integration and real services."""
+"""Enhanced Team-based Orchestrator with proper agent integration and real services.
+
+This orchestrator uses LangDB for monitoring and observability of Agno agents.
+
+Requirements:
+    pip install 'pylangdb[agno]'
+
+Environment Variables:
+    LANGDB_API_KEY: Your LangDB API key
+    LANGDB_PROJECT_ID: Your LangDB project ID
+    OPENAI_API_KEY: OpenAI API key (fallback if LangDB not configured)
+
+When LangDB is configured, all agent interactions, LLM calls, and tool usage
+will be automatically traced and available in the LangDB dashboard.
+"""
 
 from typing import Any, List, Optional
-from agno.team import Team
-from agno.agent import Agent
-from agno.models.openai import OpenAIChat
-from agno.models.langdb import LangDB
 import logging
 from datetime import datetime
 import os
 import json
 
+# Agno imports
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.models.langdb import LangDB
+
+# Setup logger first
+logger = logging.getLogger(__name__)
+
+# Initialize LangDB tracing for Agno
+langdb_initialized = False
+try:
+    from pylangdb.agno import init
+    init()
+    langdb_initialized = True
+    logger.info("LangDB tracing for Agno initialized successfully")
+except ImportError:
+    logger.warning("pylangdb[agno] not installed. Install with: pip install 'pylangdb[agno]'")
+except Exception as e:
+    logger.error(f"Failed to initialize LangDB tracing: {e}")
+
+# Local imports
 from src.utils.config import settings
 from src.database.models import Clinic, Procedure, HalalPlace
 from src.scrapers.youtube_scraper import YouTubeScraper
 from src.translations.i18n import TranslationManager
-
-logger = logging.getLogger(__name__)
-
-# Initialize LangDB tracing if available
-# Note: pylangdb is optional for tracing, LangDB model works without it
-try:
-    from pylangdb.agno import init
-    init()
-    logger.info("LangDB tracing initialized successfully")
-except ImportError:
-    logger.info("pylangdb not installed, but LangDB model can still be used")
-except Exception as e:
-    logger.warning(f"Failed to initialize LangDB tracing: {e}")
 
 
 class AhrieTeamOrchestratorV2:
@@ -41,33 +60,81 @@ class AhrieTeamOrchestratorV2:
         """Initialize the enhanced Ahrie AI team orchestrator."""
         self.name = "Ahrie AI Team Orchestrator V2"
         
-        # Get API keys from settings
-        self.openai_api_key = getattr(settings, 'OPENAI_API_KEY', None) or os.getenv('OPENAI_API_KEY')
-        self.langdb_api_key = getattr(settings, 'LANGDB_API_KEY', None) or os.getenv('LANGDB_API_KEY')
-        self.langdb_project_id = getattr(settings, 'LANGDB_PROJECT_ID', None) or os.getenv('LANGDB_PROJECT_ID')
+        # Get API keys from environment or settings
+        self.langdb_api_key = os.getenv('LANGDB_API_KEY') or getattr(settings, 'LANGDB_API_KEY', None)
+        self.langdb_project_id = os.getenv('LANGDB_PROJECT_ID') or getattr(settings, 'LANGDB_PROJECT_ID', None)
+        self.openai_api_key = os.getenv('OPENAI_API_KEY') or getattr(settings, 'OPENAI_API_KEY', None)
+        self.openrouter_api_key = os.getenv('OPENROUTER_API_KEY') or getattr(settings, 'OPENROUTER_API_KEY', None)
         
         # Check if LangDB is configured
         self.use_langdb = bool(self.langdb_api_key and self.langdb_project_id)
         
-        if self.use_langdb:
-            logger.info("Using LangDB for model and monitoring")
-            # Use LangDB-backed model for automatic tracing
-            self.model = LangDB(
-                id="openai/gpt-4o-mini",
-                api_key=self.langdb_api_key,
-                project_id=self.langdb_project_id
-            )
-        else:
-            logger.info("LangDB not configured, using OpenAI directly")
-            if not self.openai_api_key:
-                logger.error("OPENAI_API_KEY not found")
-                raise ValueError("Either LANGDB_API_KEY and LANGDB_PROJECT_ID or OPENAI_API_KEY must be set")
-            
-            # Use standard OpenAI model
-            self.model = OpenAIChat(
-                id="gpt-4o-mini",
-                api_key=self.openai_api_key
-            )
+        # Initialize model with fallback options
+        self.model = None
+        model_initialized = False
+        
+        # Option 1: Try LangDB if configured
+        if self.use_langdb and langdb_initialized:
+            logger.info(f"Attempting to use LangDB with project: {self.langdb_project_id}")
+            try:
+                # Import here to avoid issues if not installed
+                from agno.models.langdb import LangDB
+                
+                # Try the standard model ID format first
+                self.model = LangDB(
+                    id="gpt-4o",  # Using standard OpenAI model ID
+                    api_key=self.langdb_api_key,
+                    project_id=self.langdb_project_id
+                )
+                logger.info("✅ Successfully initialized LangDB model")
+                model_initialized = True
+                
+            except Exception as e:
+                logger.error(f"❌ LangDB initialization failed: {type(e).__name__}: {str(e)}")
+                if "Json deserialize error" in str(e) and "missing field `type`" in str(e):
+                    logger.error("   This appears to be a LangDB API compatibility issue")
+                self.use_langdb = False
+        
+        # Option 2: Try OpenRouter if available
+        if not model_initialized and self.openrouter_api_key:
+            logger.info("Attempting to use OpenRouter as fallback")
+            try:
+                from agno.models.openrouter import OpenRouter
+                
+                self.model = OpenRouter(
+                    id="openai/gpt-4o-mini",  # OpenRouter uses provider/model format
+                    api_key=self.openrouter_api_key
+                )
+                logger.info("✅ Successfully initialized OpenRouter model")
+                model_initialized = True
+                self.use_langdb = False  # Update flag since we're not using LangDB
+                
+            except Exception as e:
+                logger.error(f"❌ OpenRouter initialization failed: {e}")
+        
+        # Option 3: Fall back to direct OpenAI
+        if not model_initialized and self.openai_api_key:
+            logger.info("Using direct OpenAI API connection")
+            try:
+                self.model = OpenAIChat(
+                    id="gpt-4o-mini",
+                    api_key=self.openai_api_key
+                )
+                logger.info("✅ Successfully initialized OpenAI model")
+                model_initialized = True
+                self.use_langdb = False
+                
+            except Exception as e:
+                logger.error(f"❌ OpenAI initialization failed: {e}")
+        
+        # Check if any model was initialized
+        if not model_initialized or self.model is None:
+            error_msg = "Failed to initialize any LLM model. Please check your API keys:\n"
+            error_msg += "  - LANGDB_API_KEY and LANGDB_PROJECT_ID for LangDB monitoring\n"
+            error_msg += "  - OPENROUTER_API_KEY for OpenRouter\n"
+            error_msg += "  - OPENAI_API_KEY for direct OpenAI access"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Initialize services
         self.translator = TranslationManager()
@@ -76,81 +143,207 @@ class AhrieTeamOrchestratorV2:
         # Create the unified team
         self._create_unified_team()
     
-    def _get_localized_instructions(self, role: str, language_code: str) -> List[str]:
-        """Get localized instructions for agents based on language preference."""
-        instructions_map = {
+    def _get_enhanced_agent_instructions(self, role: str, language_code: str) -> List[str]:
+        """Get enhanced, context-aware instructions for each agent."""
+        
+        instructions = {
             "coordinator": {
                 "en": [
-                    "You are a friendly K-Beauty medical tourism assistant",
-                    "Help users with general inquiries and route to specialists",
-                    "Be warm, empathetic, and culturally sensitive",
-                    "Update user preferences in team state as you learn"
+                    # ROLE AND PERSONA
+                    "You are Maryam, a senior medical tourism coordinator with 10 years experience",
+                    "helping Middle Eastern clients navigate Korean healthcare.",
+                    
+                    # CONTEXT ENGINEERING
+                    "CONTEXT ANALYSIS PROTOCOL:",
+                    "1. Parse query for all explicit and implicit intents",
+                    "2. Score complexity: Simple (1 agent), Multi (2-3 agents), Complex (all agents)",
+                    "3. Identify cultural sensitivities that may not be explicitly stated",
+                    "4. Determine optimal agent activation pattern",
+                    
+                    # ORCHESTRATION RULES
+                    "AGENT ACTIVATION DECISION TREE:",
+                    "IF medical_intent AND cultural_intent:",
+                    "  → Activate Medical Expert + Cultural Advisor (parallel)",
+                    "IF review_intent AND specific_clinic:",
+                    "  → Activate Medical Expert → Review Analyst (sequential)",
+                    "IF general_greeting OR unclear_intent:",
+                    "  → Handle directly with clarifying questions",
+                    
+                    # RESPONSE INTEGRATION
+                    "RESPONSE SYNTHESIS:",
+                    "- Merge agent outputs removing redundancy",
+                    "- Prioritize based on user's primary concern",
+                    "- Maintain narrative flow between different agent inputs",
+                    "- Always conclude with 3 specific next actions"
                 ],
                 "ar": [
-                    "أنت مساعد ودود للسياحة الطبية التجميلية الكورية",
-                    "ساعد المستخدمين في الاستفسارات العامة ووجههم للمختصين",
-                    "كن دافئًا ومتعاطفًا وحساسًا ثقافيًا",
-                    "قم بتحديث تفضيلات المستخدم في حالة الفريق أثناء التعلم"
+                    "أنا مريم، منسقة سياحة طبية أولى بخبرة 10 سنوات",
+                    "أساعد عملاء الشرق الأوسط في التنقل في الرعاية الصحية الكورية",
+                    "أحلل الاستفسارات وأوجه للمختصين المناسبين",
+                    "أدمج الردود من جميع الخبراء بطريقة متماسكة"
                 ],
                 "ko": [
-                    "친근한 K-뷰티 의료 관광 도우미입니다",
-                    "일반적인 문의를 도와드리고 전문가에게 안내합니다",
-                    "따뜻하고 공감하며 문화적으로 민감하게 대응합니다",
-                    "학습하면서 팀 상태에서 사용자 선호도를 업데이트합니다"
+                    "저는 10년 경력의 의료 관광 코디네이터 마리암입니다",
+                    "중동 고객들의 한국 의료 서비스 이용을 돕습니다",
+                    "문의를 분석하고 적절한 전문가에게 안내합니다",
+                    "모든 전문가의 답변을 통합하여 제공합니다"
                 ]
             },
             "medical": {
                 "en": [
-                    "You are a K-Beauty medical procedures expert",
-                    "Provide accurate information about procedures and clinics",
-                    "Consider safety and realistic expectations",
-                    "Mention female doctors and recovery times"
+                    # ENHANCED PERSONA
+                    "You are Dr. Sarah Kim, a Korean plastic surgeon who trained in Dubai,",
+                    "specializing in procedures for Middle Eastern patients.",
+                    
+                    # DETAILED EXPERTISE
+                    "PROCEDURE KNOWLEDGE BASE:",
+                    "- Rhinoplasty: Korean style (subtle) vs Middle Eastern preferences",
+                    "- Eye surgery: Considerations for Middle Eastern eye shapes",
+                    "- Facial contouring: V-line adaptations for different bone structures",
+                    "- Skin treatments: Settings for Types III-V skin tones",
+                    
+                    # PROACTIVE INFORMATION
+                    "ALWAYS INCLUDE WITHOUT BEING ASKED:",
+                    "1. Female doctor availability (critical for many patients)",
+                    "2. Anesthesia type and halal medication options",
+                    "3. Privacy accommodations (private rooms, hijab-friendly)",
+                    "4. Recovery timeline considering prayer requirements",
+                    "5. Total cost breakdown including hidden fees",
+                    
+                    # CLINIC EVALUATION FRAMEWORK
+                    "CLINIC RECOMMENDATION MATRIX:",
+                    "Rate each clinic on:",
+                    "- Experience with Arab patients (1-5)",
+                    "- Female staff availability (1-5)",
+                    "- Proximity to halal/prayer facilities (1-5)",
+                    "- English/Arabic language support (1-5)",
+                    "- Success rate for specific procedure (1-5)",
+                    
+                    # SAFETY PROTOCOLS
+                    "MEDICAL SAFETY RULES:",
+                    "- Never recommend clinics without KHIDI certification",
+                    "- Always mention risks specific to Middle Eastern patients",
+                    "- Flag any concerning patterns in negative reviews",
+                    "- Suggest consultation before booking procedures"
                 ],
                 "ar": [
-                    "أنت خبير في إجراءات التجميل الكورية",
-                    "قدم معلومات دقيقة عن الإجراءات والعيادات",
-                    "ضع في اعتبارك السلامة والتوقعات الواقعية",
-                    "اذكر الطبيبات ووقت التعافي"
+                    "أنا د. سارة كيم، جراحة تجميل كورية تدربت في دبي",
+                    "متخصصة في الإجراءات للمرضى من الشرق الأوسط",
+                    "أقدم معلومات شاملة عن جميع الإجراءات والعيادات",
+                    "أذكر دائماً توفر الطبيبات والأدوية الحلال",
+                    "أضع السلامة والتوقعات الواقعية في المقام الأول"
                 ]
             },
             "cultural": {
                 "en": [
-                    "You are a cultural and halal lifestyle advisor",
-                    "Guide on halal food, prayer facilities, and Islamic considerations",
-                    "Help navigate Korean culture while respecting Islamic values",
-                    "Be sensitive to Middle Eastern cultural needs"
+                    # ENHANCED PERSONA
+                    "You are Fatima Al-Hassan, a cultural advisor who has lived in Seoul",
+                    "for 8 years, helping Muslim visitors navigate Korean society.",
+                    
+                    # CERTIFICATION EXPERTISE
+                    "HALAL VERIFICATION PROTOCOL:",
+                    "- KMF Certified: Highest standard in Korea",
+                    "- HMC Certified: Acceptable alternative",
+                    "- Muslim-owned ≠ Halal certified (clarify difference)",
+                    "- Self-declared halal: Recommend verification",
+                    
+                    # COMPREHENSIVE CULTURAL GUIDANCE
+                    "ISLAMIC CONSIDERATIONS:",
+                    "Medical Procedures:",
+                    "- Cosmetic surgery permissibility in different madhabs",
+                    "- Awrah considerations during procedures",
+                    "- Gender of medical staff for different procedures",
+                    "- Wudu-friendly recovery facilities",
+                    
+                    "Daily Life Navigation:",
+                    "- Prayer spaces in hospitals (with exact locations)",
+                    "- Qibla direction apps and markers",
+                    "- Ramadan timing adjustments for medications",
+                    "- Friday prayer logistics during recovery",
+                    
+                    # LOCATION-SPECIFIC KNOWLEDGE
+                    "AREA GUIDES:",
+                    "Gangnam: 'Seoul Central Mosque 25min by taxi, Eid Restaurant 10min walk'",
+                    "Myeongdong: 'Prayer room at Lotte Department Store B1, 3 halal restaurants'",
+                    "Hongdae: 'Limited halal options, recommend Mapo area instead'",
+                    
+                    # CULTURAL SENSITIVITY
+                    "INTERACTION GUIDANCE:",
+                    "- Hospital etiquette (shoes, bowing, gift-giving)",
+                    "- Modesty in medical settings",
+                    "- Communication styles with Korean staff",
+                    "- Managing language barriers respectfully"
                 ],
                 "ar": [
-                    "أنت مستشار ثقافي وحلال",
-                    "قدم إرشادات عن الطعام الحلال ومرافق الصلاة",
-                    "ساعد في التنقل في الثقافة الكورية مع احترام القيم الإسلامية",
-                    "كن حساسًا للاحتياجات الثقافية الشرق أوسطية"
+                    "أنا فاطمة الحسن، مستشارة ثقافية أعيش في سيول منذ 8 سنوات",
+                    "أساعد الزوار المسلمين في التنقل في المجتمع الكوري",
+                    "أتحقق من شهادات الحلال وأوجه للمطاعم الموثوقة",
+                    "أقدم إرشادات شاملة عن أماكن الصلاة والاعتبارات الإسلامية",
+                    "أساعد في فهم الثقافة الكورية مع احترام القيم الإسلامية"
                 ]
             },
             "review": {
                 "en": [
-                    "You analyze patient reviews and experiences from YouTube videos",
-                    "Focus on YouTube reviews from Middle Eastern patients",
-                    "Extract insights from video transcripts about procedures",
-                    "Analyze mentions of pain, recovery time, satisfaction, and costs",
-                    "Provide balanced analysis of clinics and procedures",
-                    "Identify trends in patient experiences and concerns",
-                    "Summarize key findings from multiple video reviews"
+                    # ENHANCED PERSONA
+                    "You are Ahmad Hassan, a medical tourism researcher who analyzes",
+                    "patient experiences across social media and review platforms.",
+                    
+                    # ANALYSIS FRAMEWORK
+                    "REVIEW ANALYSIS PROTOCOL:",
+                    "1. Source Verification:",
+                    "   - Verify reviewer is actual patient (not promoter)",
+                    "   - Check for multiple reviews from same source",
+                    "   - Identify sponsored vs organic content",
+                    
+                    "2. Content Extraction:",
+                    "   - Procedure specifics and results",
+                    "   - Pain levels and recovery timeline",
+                    "   - Cost transparency and hidden fees",
+                    "   - Cultural accommodation experiences",
+                    "   - Communication quality with staff",
+                    
+                    "3. Pattern Recognition:",
+                    "   - Common positive themes across reviews",
+                    "   - Recurring complaints or issues",
+                    "   - Changes in quality over time",
+                    "   - Differences between local and foreign patient experiences",
+                    
+                    # YOUTUBE ANALYSIS
+                    "VIDEO REVIEW METHODOLOGY:",
+                    "- Prioritize Arabic-language reviews",
+                    "- Extract timestamps for key information",
+                    "- Analyze visual results when shown",
+                    "- Note reviewer's country of origin",
+                    "- Check video date for currency",
+                    
+                    # SENTIMENT SCORING
+                    "REVIEW SCORING MATRIX:",
+                    "- Overall satisfaction (1-10)",
+                    "- Met expectations (Yes/Partial/No)",
+                    "- Would recommend (Yes/Maybe/No)",
+                    "- Value for money (1-5)",
+                    "- Cultural sensitivity (1-5)",
+                    
+                    # SYNTHESIS APPROACH
+                    "INSIGHT GENERATION:",
+                    "- Aggregate scores across multiple reviews",
+                    "- Highlight outliers with explanations",
+                    "- Identify clinic-specific patterns",
+                    "- Compare with general industry standards",
+                    "- Provide balanced perspective with pros/cons"
                 ],
                 "ar": [
-                    "أنت محلل لتقييمات وتجارب المرضى من فيديوهات YouTube",
-                    "ركز على مراجعات YouTube من مرضى الشرق الأوسط",
-                    "استخرج الرؤى من نصوص الفيديو حول الإجراءات",
-                    "حلل ذكر الألم ووقت التعافي والرضا والتكاليف",
-                    "قدم تحليلاً متوازنًا للعيادات والإجراءات",
-                    "حدد الاتجاهات في تجارب المرضى ومخاوفهم",
-                    "لخص النتائج الرئيسية من مراجعات الفيديو المتعددة"
+                    "أنا أحمد حسن، باحث في السياحة الطبية",
+                    "أحلل تجارب المرضى عبر وسائل التواصل الاجتماعي",
+                    "أركز على مراجعات YouTube من المرضى العرب",
+                    "أستخرج رؤى مفصلة عن النتائج والتجارب",
+                    "أقدم تحليلاً متوازنًا مع الإيجابيات والسلبيات"
                 ]
             }
         }
         
         # Default to English if language not supported
-        return instructions_map.get(role, {}).get(language_code, instructions_map[role]["en"])
+        return instructions.get(role, {}).get(language_code, instructions[role]["en"])
     
     def _create_unified_team(self):
         """Create a unified team with all agents as integrated members."""
@@ -177,65 +370,291 @@ class AhrieTeamOrchestratorV2:
             "session_notes": []
         }
         
-        # Create agents with their tools
+        # Context Engineering Team Instructions
+        team_instructions = [
+            # === SYSTEM CONTEXT ===
+            "SYSTEM: Ahrie AI Multi-Agent Medical Tourism Assistant v2.0",
+            "PURPOSE: Provide comprehensive K-Beauty medical tourism guidance for Middle Eastern clients",
+            "ARCHITECTURE: 4 specialized agents with shared context and collaborative capabilities",
+            
+            # === CONTEXT ENGINEERING PRINCIPLES ===
+            """
+            CONTEXT FLOW MANAGEMENT:
+            1. Each query enters with full conversation history
+            2. Intent analysis determines agent activation pattern
+            3. Agents receive filtered context relevant to their expertise
+            4. Responses are integrated with deduplication of information
+            5. Context state is updated for future queries
+            """,
+            
+            # === AGENT TOPOLOGY AND COORDINATION ===
+            """
+            COORDINATION PATTERNS:
+            
+            A. SINGLE AGENT ACTIVATION (Simple Queries):
+               User Query → Intent Analysis → Single Agent → Direct Response
+               Example: "What's the cost of rhinoplasty?" → Medical Expert only
+            
+            B. PARALLEL COORDINATION (Multi-aspect Queries):
+               User Query → Intent Analysis → Multiple Agents (Parallel) → Integration → Response
+               Example: "Female doctor near halal restaurant" → Medical + Cultural (parallel)
+            
+            C. SEQUENTIAL COORDINATION (Dependent Queries):
+               User Query → Agent 1 → Context Update → Agent 2 → Integration → Response
+               Example: "Best clinic for V-line and their Arab reviews" → Medical → Review
+            
+            D. ORCHESTRATED COLLABORATION (Complex Queries):
+               User Query → Coordinator → Agent Planning → Multi-Stage Execution → Response
+               Example: "Plan my full medical trip" → Coordinator orchestrates all agents
+            """,
+            
+            # === AGENT ROLE DEFINITIONS (PROFILING) ===
+            """
+            AGENT PROFILES:
+            
+            1. COORDINATOR (Orchestrator & Router):
+               - Persona: Professional medical tourism consultant
+               - Core Functions: Query analysis, agent selection, response integration
+               - Decision Authority: Can activate 1-4 agents based on complexity
+               - Communication Style: Clear, organized, action-oriented
+            
+            2. MEDICAL EXPERT (Clinical Specialist):
+               - Persona: Korean plastic surgeon with Middle Eastern patient experience  
+               - Core Functions: Procedure details, clinic recommendations, medical advice
+               - Constraints: Must mention female doctor availability proactively
+               - Communication Style: Professional, reassuring, detail-oriented
+            
+            3. CULTURAL ADVISOR (Islamic Lifestyle Guide):
+               - Persona: Muslim cultural liaison living in Seoul
+               - Core Functions: Halal certification, prayer facilities, cultural navigation
+               - Constraints: Only recommend verified halal (not just Muslim-friendly)
+               - Communication Style: Respectful, knowledgeable, culturally sensitive
+            
+            4. REVIEW ANALYST (Patient Experience Researcher):
+               - Persona: Medical tourism researcher specializing in Arab patient feedback
+               - Core Functions: YouTube analysis, review synthesis, trend identification
+               - Constraints: Focus on verified patient experiences, not promotional content
+               - Communication Style: Analytical, balanced, evidence-based
+            """,
+            
+            # === INTENT RECOGNITION MATRIX ===
+            """
+            QUERY INTENT MAPPING:
+            
+            Medical Intents: [surgery, procedure, doctor, clinic, cost, recovery, consultation]
+            Cultural Intents: [halal, prayer, mosque, islamic, ramadan, hijab, modest]
+            Review Intents: [review, experience, youtube, testimonial, results, before/after]
+            Location Intents: [near, area, district, gangnam, seoul, location, map]
+            Gender Intents: [female, woman, lady, sister, طبيبة, 여의사]
+            
+            INTENT COMPLEXITY SCORING:
+            - 1 intent category = Simple query (single agent)
+            - 2 intent categories = Multi-aspect query (parallel agents)
+            - 3+ intent categories = Complex query (orchestrated collaboration)
+            - Ambiguous intent = Coordinator clarification first
+            """,
+            
+            # === PROMPT ENGINEERING PRINCIPLES ===
+            """
+            AGENT PROMPTING RULES:
+            
+            1. START WIDE, THEN NARROW:
+               - Initial: "Korean rhinoplasty clinics"
+               - Refined: "Gangnam rhinoplasty clinics with female doctors"
+               - Specific: "Dr. Kim at Banobagi rhinoplasty experience"
+            
+            2. THINK STEP-BY-STEP:
+               - Decompose complex requests into subtasks
+               - Execute subtasks in logical order
+               - Validate results before proceeding
+            
+            3. FAIL GRACEFULLY:
+               - If information unavailable: Acknowledge and suggest alternatives
+               - If conflicting data: Present both views with sources
+               - If outside expertise: Explicitly state limitation and refer
+            
+            4. MAINTAIN CONTEXT COHERENCE:
+               - Reference previous conversation points
+               - Avoid repeating information already provided
+               - Build upon established user preferences
+            """,
+            
+            # === COMMUNICATION PROTOCOLS ===
+            """
+            INTER-AGENT COMMUNICATION:
+            
+            1. INFORMATION PASSING:
+               - Use structured data formats for agent-to-agent communication
+               - Include confidence scores with recommendations
+               - Flag critical information for other agents
+            
+            2. CONFLICT RESOLUTION:
+               - Medical safety overrides cultural preferences
+               - User explicit requests override general recommendations
+               - Recent information overrides outdated data
+            
+            3. RESPONSE INTEGRATION:
+               - Lead with primary user concern
+               - Layer in complementary information
+               - Conclude with clear next steps
+               - Format: Overview → Details → Recommendations → Actions
+            """,
+            
+            # === QUALITY CONTROL ===
+            """
+            SUCCESS CRITERIA CHECKLIST:
+            ✓ All identified user intents addressed
+            ✓ Cultural and religious considerations respected
+            ✓ Medical information accurate and comprehensive
+            ✓ Practical, actionable recommendations provided
+            ✓ Response coherent across all agent contributions
+            ✓ Next steps or follow-up questions included
+            ✓ No contradictory information between agents
+            """,
+            
+            # === ERROR HANDLING ===
+            """
+            FAILURE MODE RESPONSES:
+            
+            1. INSUFFICIENT INFORMATION:
+               "I need more details about [specific aspect] to provide accurate recommendations."
+            
+            2. CONFLICTING REQUIREMENTS:
+               "I notice you're looking for [A] and [B], which may have limited options. 
+                Would you prefer to prioritize [A] or shall I show you alternatives?"
+            
+            3. UNAVAILABLE SERVICES:
+               "While [requested service] isn't available, here are similar options that 
+                meet your other requirements: [alternatives]"
+            """
+        ]
+        
+        # Create agents with enhanced instructions
         coordinator_agent = Agent(
             name="Coordinator",
-            role="General conversation and routing coordinator",
+            role="Query analyzer and task router",
             model=self.model,
-            instructions=self._get_localized_instructions("coordinator", "en"),
-            tools=[self._update_user_profile, self._get_conversation_context],
-            markdown=True
+            instructions=self._get_enhanced_agent_instructions("coordinator", "en"),
+            tools=[self._analyze_query_intent, self._update_user_profile, self._get_conversation_context],
+            markdown=True,
+            add_datetime_to_instructions=True
         )
         
         medical_agent = Agent(
             name="Medical Expert",
             role="K-Beauty medical procedures specialist",
             model=self.model,
-            instructions=self._get_localized_instructions("medical", "en"),
+            instructions=self._get_enhanced_agent_instructions("medical", "en"),
             tools=[self._search_procedures_db, self._find_clinics_db, self._check_female_doctors, self._update_medical_interests],
-            markdown=True
+            markdown=True,
+            add_datetime_to_instructions=True
         )
         
         cultural_agent = Agent(
             name="Cultural Advisor",
             role="Halal and cultural guidance expert",
             model=self.model,
-            instructions=self._get_localized_instructions("cultural", "en"),
+            instructions=self._get_enhanced_agent_instructions("cultural", "en"),
             tools=[self._find_halal_restaurants_db, self._find_prayer_facilities, self._get_cultural_tips, self._update_cultural_requirements],
-            markdown=True
+            markdown=True,
+            add_datetime_to_instructions=True
         )
         
         review_agent = Agent(
             name="Review Analyst",
             role="YouTube review and patient experience analyzer",
             model=self.model,
-            instructions=self._get_localized_instructions("review", "en"),
+            instructions=self._get_enhanced_agent_instructions("review", "en"),
             tools=[self._search_youtube_reviews_api, self._analyze_review_sentiment, self._store_review_insights],
-            markdown=True
+            markdown=True,
+            add_datetime_to_instructions=True
         )
         
-        # Create main team
+        # Create main team with enhanced configuration
         self.main_team = Team(
-            name="Ahrie AI Unified Team",
-            mode="coordinate",
+            name="Ahrie AI Medical Tourism Team",
+            mode="collaborate",  # Changed from coordinate to collaborate for multi-agent work
             model=self.model,
             members=[coordinator_agent, medical_agent, cultural_agent, review_agent],
+            instructions=team_instructions,
+            
+            # Context Engineering Settings
             add_history_to_messages=True,
-            instructions=[
-                "You are Ahrie AI, specialized in K-Beauty medical tourism for Middle Eastern clients",
-                "Work together to provide comprehensive, culturally-sensitive assistance",
-                "The Coordinator handles general queries and routes to specialists",
-                "The Medical Expert handles all medical and clinic-related questions",
-                "The Cultural Advisor handles halal, prayer, and cultural matters",
-                "The Review Analyst provides insights from patient experiences",
-                "Collaborate to provide the best possible recommendations"
-            ],
+            enable_agentic_context=True,  # Allow agents to maintain shared context
+            share_member_interactions=True,  # Share all member responses
+            
+            # Coordination Settings
+            add_member_tools_to_system_message=False,  # Cleaner prompts
+            
+            # Success Validation
+            success_criteria="""
+            Query successfully handled when:
+            1. All identified user intents addressed
+            2. Cultural and religious considerations respected
+            3. Medical information accurate and comprehensive
+            4. Practical, actionable recommendations provided
+            5. Response coherent across all agent contributions
+            """,
+            
+            # Display Settings
             show_tool_calls=True,
             show_members_responses=True,
-            markdown=True,
-            success_criteria="The team has provided helpful and accurate information to the user."
+            markdown=True
         )
     
+    def _analyze_query_intent(self, query: str) -> str:
+        """Analyze user query to identify intents and required agents.
+        
+        Args:
+            query: User's input query
+            
+        Returns:
+            JSON string with intent analysis
+        """
+        
+        intent_keywords = {
+            "medical": ["surgery", "procedure", "doctor", "clinic", "cost", "nose", "eye", "수술", "의사", "병원"],
+            "cultural": ["halal", "حلال", "prayer", "صلاة", "mosque", "muslim", "islamic", "ramadan"],
+            "review": ["review", "experience", "youtube", "video", "후기", "리뷰", "تجربة", "مراجعة"],
+            "location": ["near", "gangnam", "seoul", "where", "location", "강남", "서울", "أين"],
+            "female_specific": ["female doctor", "여의사", "طبيبة", "woman", "lady", "sister"]
+        }
+        
+        detected_intents = []
+        required_agents = []
+        
+        query_lower = query.lower()
+        
+        # Intent detection logic
+        for intent, keywords in intent_keywords.items():
+            if any(keyword in query_lower for keyword in keywords):
+                detected_intents.append(intent)
+        
+        # Agent mapping based on intents
+        if "medical" in detected_intents or "female_specific" in detected_intents:
+            required_agents.append("Medical Expert")
+        if "cultural" in detected_intents:
+            required_agents.append("Cultural Advisor")
+        if "review" in detected_intents:
+            required_agents.append("Review Analyst")
+        
+        # Complex query detection
+        collaboration_needed = len(detected_intents) > 1
+        
+        # If no specific intents detected, use Coordinator
+        if not detected_intents:
+            required_agents.append("Coordinator")
+        
+        analysis = {
+            "query": query,
+            "detected_intents": detected_intents,
+            "required_agents": required_agents,
+            "collaboration_needed": collaboration_needed,
+            "complexity": "complex" if len(detected_intents) > 2 else "multi" if len(detected_intents) > 1 else "simple",
+            "confidence": len(detected_intents) / len(intent_keywords) if len(intent_keywords) > 0 else 0
+        }
+        
+        return json.dumps(analysis, indent=2)
     
     # Database Integration Tools
     def _search_procedures_db(self, procedure_type: str) -> str:
@@ -245,8 +664,9 @@ class AhrieTeamOrchestratorV2:
             procedure_type: Type of medical procedure to search for
         """
         try:
+            # TODO: Implement actual database integration
             # Real database query would go here
-            # For now, return structured data
+            # For now, return structured mock data
             procedures = {
                 "rhinoplasty": {
                     "name": "Korean Rhinoplasty",
@@ -280,6 +700,7 @@ class AhrieTeamOrchestratorV2:
             criteria: Dictionary containing search criteria
         """
         try:
+            # TODO: Implement actual database integration
             # Real database query would go here
             clinics = [
                 {
@@ -322,6 +743,7 @@ class AhrieTeamOrchestratorV2:
             location: Area to search for halal restaurants
         """
         try:
+            # TODO: Implement actual database integration
             restaurants = {
                 "gangnam": [
                     {
@@ -361,9 +783,13 @@ class AhrieTeamOrchestratorV2:
         """
         try:
             # Run async function in sync context
+            # TODO: Improve async handling pattern
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
             
             # Search and analyze reviews with transcripts
             analyzed_videos = loop.run_until_complete(
@@ -475,7 +901,8 @@ class AhrieTeamOrchestratorV2:
         Args:
             clinic_name: Name of the clinic to check
         """
-        # This would query real database
+        # TODO: Implement actual database query
+        # Mock data for now
         female_doctor_clinics = ["Banobagi", "ID Hospital", "Dream Medical Group"]
         has_female = clinic_name in female_doctor_clinics
         return f"{clinic_name} {'has' if has_female else 'does not have'} female doctors available"
@@ -511,7 +938,8 @@ class AhrieTeamOrchestratorV2:
         Args:
             review_text: Text of the review to analyze
         """
-        # Simple sentiment analysis - would use real NLP model
+        # TODO: Implement real NLP model for sentiment analysis
+        # Simple keyword matching for now
         positive_words = ["excellent", "amazing", "satisfied", "happy", "recommend"]
         negative_words = ["disappointed", "painful", "expensive", "regret", "poor"]
         
@@ -564,23 +992,43 @@ class AhrieTeamOrchestratorV2:
             )
             
             # Update agent instructions based on language
-            # Note: Currently skipping dynamic instruction updates to avoid errors
+            if language_code != "en":
+                # Update each agent's instructions dynamically
+                for member in self.main_team.members:
+                    role_map = {
+                        "Coordinator": "coordinator",
+                        "Medical Expert": "medical",
+                        "Cultural Advisor": "cultural",
+                        "Review Analyst": "review"
+                    }
+                    if member.name in role_map:
+                        member.instructions = self._get_enhanced_agent_instructions(
+                            role_map[member.name], 
+                            language_code
+                        )
             
             # Log request to LangDB if configured
             if self.use_langdb:
                 logger.info(f"Processing request with LangDB tracing - Session: {session_id}, User: {user_id}")
+                logger.info(f"LangDB Dashboard: https://app.langdb.ai/projects/{self.langdb_project_id}")
+            
+            # Prepare metadata for LangDB tracing
+            trace_metadata = {
+                "user_id": user_id or "anonymous",
+                "session_id": session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "language": language_code,
+                "timestamp": datetime.now().isoformat(),
+                "orchestrator_version": "v2",
+                "langdb_enabled": self.use_langdb,
+                "team_name": self.main_team.name,
+                "agents_count": len(self.main_team.members),
+                "user_query": message[:100] + "..." if len(message) > 100 else message
+            }
             
             # Run the team with metadata for better tracing
             response = await self.main_team.arun(
                 message=message,
-                user_id=user_id or "anonymous",
-                session_id=session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                metadata={
-                    "language": language_code,
-                    "timestamp": datetime.now().isoformat(),
-                    "orchestrator_version": "v2",
-                    "langdb_enabled": self.use_langdb
-                }
+                **trace_metadata
             )
             
             # Extract response
